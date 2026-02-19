@@ -9,16 +9,22 @@ HOST="127.0.0.1"
 PORT="8765"
 SESSIONS_DIR="${HOME}/.codex/sessions"
 REPORTS_DIR="${APP_DIR}"
+MAX_RETENTION_DAYS="31"
+MAX_CSV_ROWS="0"
+MAX_CSV_BYTES="0"
 
 usage() {
   cat <<USAGE
-Usage: $(basename "$0") [-p PORT] [-h HOST] [-s SESSIONS_DIR] [-r REPORTS_DIR]
+Usage: $(basename "$0") [-p PORT] [-h HOST] [-s SESSIONS_DIR] [-r REPORTS_DIR] [--max-retention-days DAYS] [--max-csv-rows N] [--max-csv-bytes BYTES]
 
 Options:
   -p PORT           Port to bind (default: ${PORT})
   -h HOST           Host to bind (default: ${HOST})
   -s SESSIONS_DIR   Codex sessions directory (default: ${SESSIONS_DIR})
   -r REPORTS_DIR    Reports directory (default: ${REPORTS_DIR})
+  --max-retention-days DAYS  Keep only newest DAYS of events in typed CSV datasets (default: ${MAX_RETENTION_DAYS})
+  --max-csv-rows N           Optional hard row cap after retention (default: ${MAX_CSV_ROWS}, disabled)
+  --max-csv-bytes BYTES      Deprecated size cap (default: ${MAX_CSV_BYTES}, disabled)
   --help            Show this help
 
 Example:
@@ -44,6 +50,18 @@ while (($# > 0)); do
       REPORTS_DIR="${2:-}"
       shift 2
       ;;
+    --max-retention-days)
+      MAX_RETENTION_DAYS="${2:-}"
+      shift 2
+      ;;
+    --max-csv-rows)
+      MAX_CSV_ROWS="${2:-}"
+      shift 2
+      ;;
+    --max-csv-bytes)
+      MAX_CSV_BYTES="${2:-}"
+      shift 2
+      ;;
     --help)
       usage
       exit 0
@@ -56,14 +74,14 @@ while (($# > 0)); do
   esac
 done
 
-if [[ -z "${PORT}" || -z "${HOST}" || -z "${SESSIONS_DIR}" || -z "${REPORTS_DIR}" ]]; then
+if [[ -z "${PORT}" || -z "${HOST}" || -z "${SESSIONS_DIR}" || -z "${REPORTS_DIR}" || -z "${MAX_RETENTION_DAYS}" || -z "${MAX_CSV_ROWS}" || -z "${MAX_CSV_BYTES}" ]]; then
   echo "Missing required option value." >&2
   usage
   exit 1
 fi
 
-if [[ "${PORT}" =~ [^0-9] ]]; then
-  echo "Invalid port: ${PORT}" >&2
+if [[ "${PORT}" =~ [^0-9] || "${MAX_RETENTION_DAYS}" =~ [^0-9] || "${MAX_CSV_ROWS}" =~ [^0-9] || "${MAX_CSV_BYTES}" =~ [^0-9] ]]; then
+  echo "Invalid numeric option value." >&2
   exit 1
 fi
 
@@ -76,4 +94,7 @@ exec "${PYTHON_BIN}" "${APP_DIR}/model_audit_local_app.py" \
   --host "${HOST}" \
   --port "${PORT}" \
   --sessions-dir "${SESSIONS_DIR}" \
-  --reports-dir "${REPORTS_DIR}"
+  --reports-dir "${REPORTS_DIR}" \
+  --max-retention-days "${MAX_RETENTION_DAYS}" \
+  --max-csv-rows "${MAX_CSV_ROWS}" \
+  --max-csv-bytes "${MAX_CSV_BYTES}"

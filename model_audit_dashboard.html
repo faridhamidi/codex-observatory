@@ -89,6 +89,12 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
 .badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:999px;font-size:.68rem;border:1px solid var(--border-hi);background:var(--glass);color:var(--text-dim);font-family:'JetBrains Mono',monospace}
 .warning{margin-top:12px;padding:10px 12px;border-radius:8px;border:1px solid rgba(244,114,182,.3);background:rgba(244,114,182,.08);font-size:.78rem;color:#f9d1e5;font-family:'JetBrains Mono',monospace;display:none}
 .warning.active{display:block}
+.warning.pass{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.1);color:#cffce9}
+.warning.fail{border-color:rgba(244,114,182,.35);background:rgba(244,114,182,.1);color:#ffd9ee}
+.warning.info{border-color:rgba(56,189,248,.35);background:rgba(56,189,248,.1);color:#d8f2ff}
+.warning .actions-title{font-weight:700;margin-bottom:6px}
+.warning ul.actions-list{margin:0;padding-left:18px}
+.warning ul.actions-list li{margin:3px 0;line-height:1.35}
 @media(max-width:1400px){.kpis{grid-template-columns:repeat(5,1fr)}}
 @media(max-width:1200px){.kpis{grid-template-columns:repeat(3,1fr)}.grid-hero,.grid-trio,.grid-duo{grid-template-columns:1fr}.masthead{grid-template-columns:1fr}}
 @media(max-width:640px){.kpis{grid-template-columns:repeat(2,1fr)}.shell{padding:16px}.tab-btn{flex:1}}
@@ -154,7 +160,9 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
   </section>
 
   <section id="usageTab" class="tab active">
-    <div id="usageUnavailable" class="warning">Usage telemetry unavailable for old CSV schema. Refresh to regenerate with the new schema.</div>
+    <div id="usageUnavailable" class="warning">Usage telemetry unavailable for current typed CSV schema. Refresh to regenerate datasets.</div>
+    <div id="usageAuditStatus" class="warning">Audit status pending.</div>
+    <div id="usageAuditActions" class="warning"></div>
 
     <section class="kpis">
       <article class="kpi"><div class="label">Total Tokens</div><div class="value c1" id="uKpiTotal">0</div></article>
@@ -168,6 +176,8 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
       <article class="kpi"><div class="label">Most Expensive Workspace</div><div class="value" id="uKpiTopWorkspace">—</div></article>
       <article class="kpi"><div class="label">Most Expensive Thread</div><div class="value" id="uKpiTopThread">—</div></article>
       <article class="kpi"><div class="label">Most Expensive Query</div><div class="value" id="uKpiTopQuery">—</div></article>
+      <article class="kpi"><div class="label">Audit Status</div><div class="value" id="uKpiAuditStatus">—</div></article>
+      <article class="kpi"><div class="label">Recon Delta (Raw-Recomputed)</div><div class="value" id="uKpiReconDelta">0</div></article>
     </section>
 
     <section class="grid-hero">
@@ -208,7 +218,15 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
 
 <script>
 (function(){
-const CSV_URL="__CSV_RELATIVE_PATH__";
+const DATA_BASE_URL="__DATA_BASE_PATH__";
+const AUDIT_URL="__AUDIT_JSON_RELATIVE_PATH__";
+const CATALOG_URL=DATA_BASE_URL+"/catalog.json";
+const DATASET_URLS={
+  routing:DATA_BASE_URL+"/routing_context.csv",
+  queries:DATA_BASE_URL+"/query_messages.csv",
+  tokens:DATA_BASE_URL+"/usage_tokens.csv",
+  tools:DATA_BASE_URL+"/tool_calls.csv"
+};
 const COLORS=["#ff6b35","#00d4aa","#a78bfa","#f472b6","#fbbf24","#38bdf8","#34d399","#fb923c","#c084fc","#f87171"];
 const PRESETS={
   "1h":{ms:36e5,min:6e4,max:3e5,pts:60},
@@ -217,7 +235,7 @@ const PRESETS={
   "7d":{ms:6048e5,min:18e5,max:216e5,pts:120}
 };
 const INTERVALS=[6e4,12e4,3e5,6e5,9e5,18e5,36e5,72e5,144e5,216e5];
-const state={records:[],preset:"7d",windowMs:PRESETS["7d"].ms,mode:"preset",bucketMs:PRESETS["7d"].max,activeTab:"usage",selection:null};
+const state={audit:null,catalog:null,preset:"7d",windowMs:PRESETS["7d"].ms,mode:"preset",bucketMs:PRESETS["7d"].max,activeTab:"usage",selection:null,anchorMs:null,loadId:0};
 const charts={};
 const $=id=>document.getElementById(id);
 
@@ -358,6 +376,7 @@ function parseCsv(text){
     if(!Number.isFinite(ts))continue;
     const eventType=o.event_type||"turn_context";
     const input=toNum(o.input_tokens),output=toNum(o.output_tokens),cached=toNum(o.cached_input_tokens),reasoning=toNum(o.reasoning_output_tokens);
+    const totalRaw=toNum(o.total_tokens_raw),totalRecomputed=toNum(o.total_tokens_recomputed),totalDelta=toNum(o.total_tokens_delta);
     let total=toNum(o.total_tokens);
     if(total==null&&(input!=null||output!=null))total=(input||0)+(output||0);
     out.push({
@@ -385,6 +404,10 @@ function parseCsv(text){
       outputTokens:output,
       cachedInputTokens:cached,
       reasoningOutputTokens:reasoning,
+      totalTokensRaw:totalRaw,
+      totalTokensRecomputed:totalRecomputed,
+      totalTokensDelta:totalDelta,
+      reconciliationStatus:o.reconciliation_status||"",
       totalTokens:total
     });
   }
@@ -393,12 +416,12 @@ function parseCsv(text){
 }
 
 function selectWindow(){
-  const anchor=state.records.length?state.records[state.records.length-1].ts:null;
-  if(!anchor)return{rows:[],startMs:null,endMs:null,bucketMs:state.bucketMs};
+  const anchor=state.anchorMs;
+  if(!anchor)return{rows:[],routingRows:[],queryRows:[],tokenRows:[],toolRows:[],startMs:null,endMs:null,bucketMs:state.bucketMs};
   const end=anchor,start=end-state.windowMs;
   const p=state.mode==="preset"?PRESETS[state.preset]:{min:6e4,max:216e5,pts:100};
   const b=pickInterval(state.windowMs,p);state.bucketMs=b;
-  return{rows:state.records.filter(r=>r.ts>=start&&r.ts<=end),startMs:start,endMs:end,bucketMs:b};
+  return{rows:[],routingRows:[],queryRows:[],tokenRows:[],toolRows:[],startMs:start,endMs:end,bucketMs:b};
 }
 
 function sortedMapEntries(map,limit,labelFn){
@@ -441,14 +464,15 @@ function drawRoutingTimeseries(buckets,models){
 }
 
 function renderRoutingTable(rows){
-  const recent=[...rows].filter(r=>r.eventType==="turn_context").sort((a,b)=>b.ts-a.ts).slice(0,120);
+  const recent=[...rows].sort((a,b)=>b.ts-a.ts).slice(0,120);
   const lines=recent.map(r=>`<tr><td>${esc(fmtLocal(r.ts))}</td><td>${esc(r.model)}</td><td>${esc(r.sandbox)}</td><td>${esc(r.approval)}</td><td class="workspace" title="${esc(workspaceName(r.cwd))}">${esc(workspaceName(r.cwd))}</td><td class="path" title="${esc(r.threadId)}">${esc(threadDisplay(r.threadLabel,r.threadId))}</td></tr>`);
   tableRows("eventsTableBody",lines,6);
 }
 
 function renderRouting(sel){
-  const agg=aggregateRouting(sel.rows,sel.startMs,sel.bucketMs);
-  const routingCount=sel.rows.filter(r=>r.eventType==="turn_context").length;
+  const routingRows=sel.routingRows||[];
+  const agg=aggregateRouting(routingRows,sel.startMs,sel.bucketMs);
+  const routingCount=routingRows.length;
   if(!routingCount){
     $("kpiEvents").textContent="0";$("kpiModels").textContent="0";$("kpiWorkspaces").textContent="0";
     $("kpiDominant").textContent="—";$("kpiStart").textContent="—";$("kpiEnd").textContent="—";
@@ -464,7 +488,7 @@ function renderRouting(sel){
   $("kpiDominant").textContent=topModel?`${topModel.label} (${fmtNum(topModel.value)})`:"—";
   $("kpiStart").textContent=sel.startMs?fmtLocal(sel.startMs):"—";
   $("kpiEnd").textContent=sel.endMs?fmtLocal(sel.endMs):"—";
-  renderRoutingTable(sel.rows);
+  renderRoutingTable(routingRows);
   drawRoutingTimeseries(agg.buckets,agg.models);
   drawDoughnut("modelShareCanvas","modelShareLegend",sortedMapEntries(agg.mC),"No data");
   drawBars("workspaceCanvas",sortedMapEntries(agg.wC,9),"No data","Events");
@@ -556,18 +580,51 @@ function regressionSlope(values){
   return den?num/den:0;
 }
 
+function setUsageAuditBanner(status,text){
+  const el=$("usageAuditStatus");
+  el.classList.remove("pass","fail","info","active");
+  if(!text){
+    el.textContent="";
+    return;
+  }
+  el.textContent=text;
+  el.classList.add("active");
+  el.classList.add(status);
+}
+
+function setUsageActionItems(status,title,items){
+  const el=$("usageAuditActions");
+  el.classList.remove("pass","fail","info","active");
+  if(!items||!items.length){
+    el.textContent="";
+    return;
+  }
+  const lines=items.map(item=>`<li>${esc(item)}</li>`).join("");
+  el.innerHTML=`<div class="actions-title">${esc(title||"Action items")}</div><ul class="actions-list">${lines}</ul>`;
+  el.classList.add("active");
+  el.classList.add(status||"info");
+}
+
 function renderUsage(sel){
   const usageWarn=$("usageUnavailable");
-  const usageAvailable=isUsageSchemaAvailable(state.records);
+  const usageAvailable=(
+    state.catalog&&Array.isArray(state.catalog.datasets)&&state.catalog.datasets.some(d=>d&&d.key==="usage_tokens")
+  )||isUsageSchemaAvailable(sel.rows||[]);
   usageWarn.classList.toggle("active",!usageAvailable);
 
   if(!usageAvailable){
-    ["uKpiTotal","uKpiInput","uKpiOutput","uKpiCached","uKpiReasoning","uKpiAvgPerQuery"].forEach(id=>$(id).textContent="0");
+    ["uKpiTotal","uKpiInput","uKpiOutput","uKpiCached","uKpiReasoning","uKpiAvgPerQuery","uKpiReconDelta"].forEach(id=>$(id).textContent="0");
     $("uKpiCacheHit").textContent="0%";
     $("uKpiOutInRatio").textContent="0%";
     $("uKpiTopWorkspace").textContent="—";
     $("uKpiTopThread").textContent="—";
     $("uKpiTopQuery").textContent="—";
+    $("uKpiAuditStatus").textContent="UNAVAILABLE";
+    setUsageAuditBanner("info","Audit checks unavailable because usage telemetry is missing in the loaded CSV datasets.");
+    setUsageActionItems("info","Action items",[
+      "Run a manual refresh so the dashboard regenerates typed usage CSV datasets with the current schema.",
+      "Confirm token_count events exist in source sessions for the selected retention window."
+    ]);
     drawLineStack("usageTokenTrendCanvas",[],[],"Usage telemetry unavailable");
     drawDoughnut("usageIoShareCanvas","usageIoShareLegend",[],"Usage telemetry unavailable");
     drawLineStack("usageWorkspaceTrendCanvas",[],[],"Usage telemetry unavailable");
@@ -582,20 +639,26 @@ function renderUsage(sel){
     return;
   }
 
-  const tokenRows=sel.rows.filter(r=>r.eventType==="token_count"&&r.totalTokens!=null);
-  const queryRows=sel.rows.filter(r=>r.eventType==="user_message"&&(r.messageRole||"user")==="user"&&r.queryText&&r.queryId&&r.queryId!=="unknown");
-  const toolRows=sel.rows.filter(r=>r.eventType==="tool_call"&&r.toolName);
+  const tokenRows=(sel.tokenRows||[]).filter(r=>r.totalTokens!=null);
+  const queryRows=(sel.queryRows||[]).filter(r=>(r.messageRole||"user")==="user"&&r.queryText&&r.queryId&&r.queryId!=="unknown");
+  const toolRows=(sel.toolRows||[]).filter(r=>r.toolName);
   const threadLabelById=new Map();
-  sel.rows.forEach(r=>{if(r.threadId&&!threadLabelById.has(r.threadId)&&r.threadLabel)threadLabelById.set(r.threadId,r.threadLabel);});
+  (sel.rows||[]).forEach(r=>{if(r.threadId&&!threadLabelById.has(r.threadId)&&r.threadLabel)threadLabelById.set(r.threadId,r.threadLabel);});
   const threadName=id=>threadDisplay(threadLabelById.get(id)||"",id);
 
   if(!tokenRows.length){
-    ["uKpiTotal","uKpiInput","uKpiOutput","uKpiCached","uKpiReasoning","uKpiAvgPerQuery"].forEach(id=>$(id).textContent="0");
+    ["uKpiTotal","uKpiInput","uKpiOutput","uKpiCached","uKpiReasoning","uKpiAvgPerQuery","uKpiReconDelta"].forEach(id=>$(id).textContent="0");
     $("uKpiCacheHit").textContent="0%";
     $("uKpiOutInRatio").textContent="0%";
     $("uKpiTopWorkspace").textContent="—";
     $("uKpiTopThread").textContent="—";
     $("uKpiTopQuery").textContent="—";
+    $("uKpiAuditStatus").textContent="NO DATA";
+    setUsageAuditBanner("info","No token events in the active window, so reconciliation checks cannot run.");
+    setUsageActionItems("info","Action items",[
+      "Widen the time window or refresh after new usage events are generated.",
+      "Verify retention settings are not excluding all token rows in this window."
+    ]);
     drawLineStack("usageTokenTrendCanvas",[],[],"No token events in window");
     drawDoughnut("usageIoShareCanvas","usageIoShareLegend",[],"No token events in window");
     drawLineStack("usageWorkspaceTrendCanvas",[],[],"No token events in window");
@@ -617,6 +680,19 @@ function renderUsage(sel){
     reasoning:tokenRows.reduce((a,r)=>a+(r.reasoningOutputTokens||0),0),
     total:tokenRows.reduce((a,r)=>a+(r.totalTokens||0),0)
   };
+  const recon=tokenRows.reduce((acc,r)=>{
+    if(r.totalTokensRaw!=null&&r.totalTokensRecomputed!=null){
+      acc.rowsWithBoth+=1;
+      acc.sumRaw+=r.totalTokensRaw;
+      acc.sumRecomputed+=r.totalTokensRecomputed;
+      if((r.totalTokensDelta||0)!==0||r.reconciliationStatus==="mismatch")acc.mismatchRows+=1;
+    }
+    if((r.cachedInputTokens||0)>(r.inputTokens||0))acc.cachedOverInputRows+=1;
+    if((r.reasoningOutputTokens||0)>(r.outputTokens||0))acc.reasoningOverOutputRows+=1;
+    return acc;
+  },{rowsWithBoth:0,sumRaw:0,sumRecomputed:0,mismatchRows:0,cachedOverInputRows:0,reasoningOverOutputRows:0});
+  const reconDeltaRawMinusRecomputed=recon.sumRaw-recon.sumRecomputed;
+  const reconPass=recon.rowsWithBoth===0?false:(reconDeltaRawMinusRecomputed===0&&recon.mismatchRows===0&&recon.cachedOverInputRows===0&&recon.reasoningOverOutputRows===0);
 
   const dims=aggregateTokenDimensions(tokenRows);
   const best=(map)=>[...map.entries()].sort((a,b)=>b[1].total-a[1].total)[0];
@@ -644,6 +720,8 @@ function renderUsage(sel){
   $("uKpiAvgPerQuery").textContent=fmtNum(avgPerQuery);
   $("uKpiTopWorkspace").textContent=topWorkspace?`${topWorkspace[0]} (${fmtNum(topWorkspace[1].total)})`:"—";
   $("uKpiTopThread").textContent=topThread?`${threadName(topThread[0])} (${fmtNum(topThread[1].total)})`:"—";
+  $("uKpiAuditStatus").textContent=recon.rowsWithBoth===0?"INFO":(reconPass?"PASS":"FAIL");
+  $("uKpiReconDelta").textContent=fmtNum(reconDeltaRawMinusRecomputed);
   const topQueryEntry=[...queryTotalMap.entries()].sort((a,b)=>b[1]-a[1])[0];
   if(topQueryEntry){
     const info=queryInfo.get(topQueryEntry[0]);
@@ -651,6 +729,35 @@ function renderUsage(sel){
     $("uKpiTopQuery").textContent=`${label} (${fmtNum(topQueryEntry[1])})`;
   }else{
     $("uKpiTopQuery").textContent="—";
+  }
+  if(recon.rowsWithBoth===0){
+    setUsageAuditBanner(
+      "info",
+      "No rows with both raw and recomputed totals in this window; reconciliation status is informational only."
+    );
+    setUsageActionItems("info","Action items",[
+      "Refresh the dataset and confirm total_tokens_raw and total_tokens_recomputed are populated for token_count rows.",
+      "If raw totals are missing upstream, treat reconciliation as blocked and audit using input+output policy only."
+    ]);
+  }else{
+    const version=(state.audit&&state.audit.metrics_version)?state.audit.metrics_version:"unknown";
+    const statusText=reconPass?"PASS":"FAIL";
+    const detail=`Audit ${statusText} (metrics ${version}) · rows=${fmtNum(recon.rowsWithBoth)} · delta=${fmtNum(reconDeltaRawMinusRecomputed)} · row mismatches=${fmtNum(recon.mismatchRows)} · cached>input=${fmtNum(recon.cachedOverInputRows)} · reasoning>output=${fmtNum(recon.reasoningOverOutputRows)}`;
+    setUsageAuditBanner(reconPass?"pass":"fail",detail);
+    if(reconPass){
+      setUsageActionItems("pass","Action items",[]);
+    }else{
+      const auditActions=((state.audit&&Array.isArray(state.audit.action_items))?state.audit.action_items:[])
+        .map(item=>item&&item.action?String(item.action):"")
+        .filter(Boolean);
+      const fallbackActions=[
+        "Inspect rows where total_tokens_delta != 0 and identify whether hidden token classes are included in raw totals.",
+        "Align total token policy to input+output (or document additional categories explicitly).",
+        "Re-run refresh and confirm delta returns to 0 before treating metrics as audit-ready."
+      ];
+      const items=auditActions.length?auditActions:fallbackActions;
+      setUsageActionItems("fail","Action items",items);
+    }
   }
 
   const buckets=bucketTokenRows(tokenRows,sel.startMs,sel.bucketMs);
@@ -805,13 +912,7 @@ function renderActiveTab(){
 }
 
 function renderAll(){
-  try{
-    const sel=selectWindow();
-    state.selection=sel;
-    $("activeWindowHint").textContent="Window: "+fmtDur(state.windowMs);
-    $("activeBucketHint").textContent="Bucket: "+fmtDur(sel.bucketMs);
-    renderActiveTab();
-  }catch(e){setStatus("Render error: "+String(e),true)}
+  loadWindowData(false,false);
 }
 
 function setActiveTab(tab){
@@ -823,13 +924,61 @@ function setActiveTab(tab){
   renderActiveTab();
 }
 
-async function loadCsv(msg=true){
+async function loadWindowData(msg=true,refreshMeta=false){
   try{
-    const r=await fetch(CSV_URL+"?t="+Date.now(),{cache:"no-store"});
-    if(!r.ok)throw new Error("CSV load failed ("+r.status+")");
-    state.records=parseCsv(await r.text());
-    if(msg)setStatus("Loaded "+state.records.length+" rows");
-    renderAll();
+    const loadId=++state.loadId;
+    const stamp=Date.now();
+    if(refreshMeta||!state.catalog){
+      const [catalogResp,auditResp]=await Promise.all([
+        fetch(CATALOG_URL+"?t="+stamp,{cache:"no-store"}),
+        fetch(AUDIT_URL+"?t="+stamp,{cache:"no-store"})
+      ]);
+      if(!catalogResp.ok)throw new Error("Catalog load failed ("+catalogResp.status+")");
+      try{state.catalog=await catalogResp.json()}catch(_err){state.catalog=null}
+      state.anchorMs=toNum(state.catalog&&state.catalog.latest_event_epoch_ms);
+      if(auditResp.ok){
+        try{state.audit=await auditResp.json()}catch(_err){state.audit=null}
+      }else{
+        state.audit=null;
+      }
+    }
+
+    const sel=selectWindow();
+    $("activeWindowHint").textContent="Window: "+fmtDur(state.windowMs);
+    $("activeBucketHint").textContent="Bucket: "+fmtDur(sel.bucketMs);
+
+    if(sel.startMs==null||sel.endMs==null){
+      state.selection={...sel,rows:[],routingRows:[],queryRows:[],tokenRows:[],toolRows:[]};
+      if(msg)setStatus("No dataset rows available yet");
+      renderActiveTab();
+      return;
+    }
+
+    const qs=`start_ms=${sel.startMs}&end_ms=${sel.endMs}&t=${stamp}`;
+    const [routingResp,queryResp,tokenResp,toolResp]=await Promise.all([
+      fetch(DATASET_URLS.routing+"?"+qs,{cache:"no-store"}),
+      fetch(DATASET_URLS.queries+"?"+qs,{cache:"no-store"}),
+      fetch(DATASET_URLS.tokens+"?"+qs,{cache:"no-store"}),
+      fetch(DATASET_URLS.tools+"?"+qs,{cache:"no-store"})
+    ]);
+    if(!routingResp.ok)throw new Error("Routing CSV load failed ("+routingResp.status+")");
+    if(!queryResp.ok)throw new Error("Query CSV load failed ("+queryResp.status+")");
+    if(!tokenResp.ok)throw new Error("Token CSV load failed ("+tokenResp.status+")");
+    if(!toolResp.ok)throw new Error("Tool CSV load failed ("+toolResp.status+")");
+
+    const routingRows=parseCsv(await routingResp.text()).filter(r=>r.eventType==="turn_context");
+    const queryRows=parseCsv(await queryResp.text()).filter(r=>r.eventType==="user_message");
+    const tokenRows=parseCsv(await tokenResp.text()).filter(r=>r.eventType==="token_count");
+    const toolRows=parseCsv(await toolResp.text()).filter(r=>r.eventType==="tool_call");
+    const rows=[...routingRows,...queryRows,...tokenRows,...toolRows].sort((a,b)=>a.ts-b.ts);
+
+    if(loadId!==state.loadId)return;
+
+    state.selection={...sel,rows,routingRows,queryRows,tokenRows,toolRows};
+    if(msg){
+      setStatus("Loaded "+rows.length+" rows · routing "+routingRows.length+" · queries "+queryRows.length+" · tokens "+tokenRows.length+" · tools "+toolRows.length);
+    }
+    renderActiveTab();
   }catch(e){setStatus(String(e),true)}
 }
 
@@ -839,8 +988,11 @@ async function refresh(){
     const r=await fetch("/refresh",{method:"POST"});const j=await r.json();
     if(!r.ok||j.status!=="ok")throw new Error(j.message||"Refresh failed");
     $("lastRefresh").textContent=j.generated_at_utc||new Date().toISOString();
-    setStatus("Refresh done — "+j.rows_written+" rows");
-    await loadCsv(false);
+    const trimmed=Number(j.rows_trimmed_total||0);
+    const trimTail=trimmed>0?(" · trimmed "+trimmed+" old rows"):"";
+    const auditTail=j.audit_status?(" · audit "+String(j.audit_status).toUpperCase()):"";
+    setStatus("Refresh done — "+j.rows_written+" rows"+trimTail+auditTail);
+    await loadWindowData(false,true);
   }catch(e){setStatus(String(e),true)}finally{$("refreshBtn").disabled=false}
 }
 
@@ -876,7 +1028,7 @@ function entrance(){
 function init(){
   const lr=$("lastRefresh");
   if(!lr.textContent||lr.textContent.includes("__LAST_REFRESH"))lr.textContent="awaiting sync";
-  bind();markPreset();entrance();loadCsv();
+  bind();markPreset();entrance();loadWindowData(true,true);
 }
 init();
 })();
