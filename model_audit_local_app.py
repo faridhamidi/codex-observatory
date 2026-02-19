@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import json
 import sys
 import tempfile
@@ -362,6 +363,28 @@ def make_thread_label(first_query_text: str, thread_id: str, cwd: str) -> str:
     return f"{base}-{suffix}"[:72]
 
 
+def list_session_log_files(sessions_dir: Path) -> list[Path]:
+    files: set[Path] = set()
+    files.update(sessions_dir.rglob("*.jsonl"))
+    files.update(sessions_dir.rglob("*.jsonl.gz"))
+    return sorted(files)
+
+
+def derive_thread_id_from_log_file(file_path: Path) -> str:
+    file_name = file_path.name
+    if file_name.endswith(".jsonl.gz"):
+        return file_name[: -len(".jsonl.gz")]
+    if file_name.endswith(".jsonl"):
+        return file_name[: -len(".jsonl")]
+    return file_path.stem
+
+
+def open_session_log_text(file_path: Path):
+    if file_path.name.endswith(".gz"):
+        return gzip.open(file_path, mode="rt", encoding="utf-8", errors="replace")
+    return file_path.open("r", encoding="utf-8", errors="replace")
+
+
 def extract_event_rows(sessions_dir: Path) -> list[AuditEventRow]:
     rows: list[AuditEventRow] = []
     if not sessions_dir.exists():
@@ -369,10 +392,10 @@ def extract_event_rows(sessions_dir: Path) -> list[AuditEventRow]:
 
     thread_title_map = load_thread_title_map()
 
-    for file_path in sorted(sessions_dir.rglob("*.jsonl")):
+    for file_path in list_session_log_files(sessions_dir):
         file_rows: list[AuditEventRow] = []
         session_file_name = file_path.name
-        thread_id = file_path.stem
+        thread_id = derive_thread_id_from_log_file(file_path)
         context_model = "unknown"
         context_cwd = "unknown"
         context_sandbox_mode = "unknown"
@@ -387,7 +410,7 @@ def extract_event_rows(sessions_dir: Path) -> list[AuditEventRow]:
         open_tools: dict[str, dict[str, Any]] = {}
 
         try:
-            with file_path.open("r", encoding="utf-8") as handle:
+            with open_session_log_text(file_path) as handle:
                 for line in handle:
                     line = line.strip()
                     if not line:

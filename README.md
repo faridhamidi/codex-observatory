@@ -5,7 +5,7 @@ A local web dashboard for auditing your Codex model usage — see which models w
 ## Requirements
 
 - Python 3.10+
-- [Codex CLI](https://github.com/openai/codex) (session logs must exist at `~/.codex/sessions`)
+- [Codex CLI](https://github.com/openai/codex) (session logs must exist at `~/.codex/sessions` as `.jsonl` or `.jsonl.gz`)
 
 ## Usage
 

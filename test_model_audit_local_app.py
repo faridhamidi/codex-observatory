@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import gzip
 import json
 from pathlib import Path
 
@@ -106,6 +107,33 @@ def test_extract_event_rows_fallback_thread_and_malformed_lines(tmp_path: Path) 
     assert token.total_tokens_raw is None
     assert token.total_tokens_recomputed == 15
     assert token.reconciliation_status == "insufficient_data"
+    assert token.total_tokens == 15
+
+
+def test_extract_event_rows_reads_gzipped_session_logs(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    log_file = sessions / "compressed-thread.jsonl.gz"
+    with gzip.open(log_file, "wt", encoding="utf-8") as handle:
+        handle.write(
+            "\n".join(
+                [
+                    '{"type":"event_msg","timestamp":"2026-02-17T01:02:03Z","payload":{"type":"user_message","message":"gzip query"}}',
+                    '{"type":"event_msg","timestamp":"2026-02-17T01:02:04Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"output_tokens":5}}}}',
+                ]
+            )
+        )
+
+    rows = extract_event_rows(sessions)
+    assert len(rows) == 2
+
+    user = next(r for r in rows if r.event_type == "user_message")
+    token = next(r for r in rows if r.event_type == "token_count")
+
+    assert user.thread_id == "compressed-thread"
+    assert user.query_id == "compressed-thread:q1"
+    assert token.query_id == "compressed-thread:q1"
+    assert token.total_tokens_recomputed == 15
     assert token.total_tokens == 15
 
 
