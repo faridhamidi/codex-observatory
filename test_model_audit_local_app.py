@@ -108,6 +108,36 @@ def test_extract_event_rows_fallback_thread_and_malformed_lines(tmp_path: Path) 
     assert token.total_tokens == 15
 
 
+def test_extract_event_rows_marks_snapshot_totals_non_comparable(tmp_path: Path) -> None:
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    log_file = sessions / "rollout.jsonl"
+    log_file.write_text(
+        "\n".join(
+            [
+                '{"type":"session_meta","timestamp":"2026-02-17T01:00:00Z","payload":{"id":"thread-snapshot"}}',
+                '{"type":"event_msg","timestamp":"2026-02-17T01:00:01Z","payload":{"type":"user_message","message":"q1"}}',
+                '{"type":"event_msg","timestamp":"2026-02-17T01:00:02Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"output_tokens":0,"cached_input_tokens":0,"reasoning_output_tokens":0,"total_tokens":155555}}}}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = extract_event_rows(sessions)
+    token = next(r for r in rows if r.event_type == "token_count")
+
+    assert token.total_tokens_raw == 155555
+    assert token.total_tokens_recomputed is None
+    assert token.total_tokens_delta is None
+    assert token.reconciliation_status == "non_comparable_snapshot"
+    assert token.total_tokens == 0
+
+    report = build_usage_audit_report(rows, generated_at_utc="2026-02-17T01:05:00Z")
+    assert report["status"] == "pass"
+    assert report["summary"]["non_comparable_snapshot_rows"] == 1
+    assert report["summary"]["rows_with_both_totals"] == 0
+
+
 def test_extract_event_rows_skips_non_user_response_messages(tmp_path: Path) -> None:
     sessions = tmp_path / "sessions"
     sessions.mkdir()

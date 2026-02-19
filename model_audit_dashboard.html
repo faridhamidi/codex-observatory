@@ -56,6 +56,22 @@ body::before{
 .tab-btn.active{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-glow)}
 .tab{display:none}
 .tab.active{display:block}
+.audit-tabs{margin-top:12px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--border);padding-bottom:2px}
+.audit-tab-btn{
+  appearance:none;border:0;outline:none;background:transparent;color:var(--text-dim);
+  padding:8px 0 10px;font-size:.8rem;font-weight:700;cursor:pointer;transition:color .2s ease;
+  letter-spacing:.02em;font-family:'JetBrains Mono',monospace;position:relative;border-radius:0;
+}
+.audit-tab-btn::after{
+  content:"";position:absolute;left:0;right:0;bottom:-3px;height:2px;background:var(--ember);
+  transform:scaleX(0);transform-origin:left;transition:transform .2s ease;opacity:.95;
+}
+.audit-tab-btn:hover{color:var(--text)}
+.audit-tab-btn.active{color:var(--ember)}
+.audit-tab-btn.active::after{transform:scaleX(1)}
+.audit-tab-btn:focus-visible{color:var(--text)}
+.audit-pane{display:none}
+.audit-pane.active{display:block}
 .kpis{margin-top:20px;display:grid;gap:10px;grid-template-columns:repeat(6,1fr)}
 .kpi{padding:16px 14px;border-radius:10px;background:var(--glass);border:1px solid var(--border);backdrop-filter:blur(8px);position:relative;overflow:hidden}
 .kpi::after{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,var(--ember),transparent);opacity:.4}
@@ -129,8 +145,8 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
   </nav>
 
   <div class="tabs">
-    <button id="tabRouting" class="tab-btn" data-tab="routing">Model Routing Audit</button>
     <button id="tabUsage" class="tab-btn active" data-tab="usage">Usage Telemetry</button>
+    <button id="tabRouting" class="tab-btn" data-tab="routing">Model Routing Audit</button>
   </div>
 
   <div id="statusLine" class="status"></div>
@@ -160,9 +176,13 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
   </section>
 
   <section id="usageTab" class="tab active">
+    <nav class="audit-tabs">
+      <button id="usageAuditTabOverview" class="audit-tab-btn active">Usage</button>
+      <button id="usageAuditTabSnapshots" class="audit-tab-btn">Audit Overview (<span id="usageSnapshotCount">0</span>)</button>
+    </nav>
+
+    <div id="usageAuditPaneOverview" class="audit-pane active">
     <div id="usageUnavailable" class="warning">Usage telemetry unavailable for current typed CSV schema. Refresh to regenerate datasets.</div>
-    <div id="usageAuditStatus" class="warning">Audit status pending.</div>
-    <div id="usageAuditActions" class="warning"></div>
 
     <section class="kpis">
       <article class="kpi"><div class="label">Total Tokens</div><div class="value c1" id="uKpiTotal">0</div></article>
@@ -176,8 +196,6 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
       <article class="kpi"><div class="label">Most Expensive Workspace</div><div class="value" id="uKpiTopWorkspace">—</div></article>
       <article class="kpi"><div class="label">Most Expensive Thread</div><div class="value" id="uKpiTopThread">—</div></article>
       <article class="kpi"><div class="label">Most Expensive Query</div><div class="value" id="uKpiTopQuery">—</div></article>
-      <article class="kpi"><div class="label">Audit Status</div><div class="value" id="uKpiAuditStatus">—</div></article>
-      <article class="kpi"><div class="label">Recon Delta (Raw-Recomputed)</div><div class="value" id="uKpiReconDelta">0</div></article>
     </section>
 
     <section class="grid-hero">
@@ -213,6 +231,42 @@ tr:hover td{color:var(--text);background:rgba(255,255,255,.02)}
     </section>
 
     <section class="panel table-section"><h2>Context Bloat Slope Leaderboard <span class="al"></span></h2><div class="table-wrap"><table><thead><tr><th>Thread</th><th>Slope</th><th>Latest Rolling Input</th><th>Queries</th></tr></thead><tbody id="contextBloatBody"></tbody></table></div></section>
+    </div>
+
+    <div id="usageAuditPaneSnapshots" class="audit-pane">
+      <div id="usageAuditStatus" class="warning">Audit status pending.</div>
+      <div id="usageAuditActions" class="warning"></div>
+      <section class="kpis">
+        <article class="kpi"><div class="label">Audit Status</div><div class="value" id="uKpiAuditStatus">—</div></article>
+        <article class="kpi"><div class="label">Recon Delta (Comparable)</div><div class="value" id="uKpiReconDelta">0</div></article>
+        <article class="kpi"><div class="label">Rows With Both Totals</div><div class="value" id="uKpiRowsWithBoth">0</div></article>
+        <article class="kpi"><div class="label">Row Mismatches</div><div class="value" id="uKpiRowMismatches">0</div></article>
+        <article class="kpi"><div class="label">Non-Comparable Rows</div><div class="value" id="uKpiNonComparable">0</div></article>
+        <article class="kpi"><div class="label">cached &gt; input</div><div class="value" id="uKpiCachedOverInput">0</div></article>
+        <article class="kpi"><div class="label">reasoning &gt; output</div><div class="value" id="uKpiReasoningOverOutput">0</div></article>
+      </section>
+      <section class="panel table-section">
+        <h2>Non-Comparable Snapshot Rows <span class="al"></span></h2>
+        <div id="usageSnapshotSummary" class="hint" style="margin-bottom:10px">No non-comparable rows in this window.</div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Workspace</th>
+                <th>Thread</th>
+                <th>Query ID</th>
+                <th>Raw Total</th>
+                <th>Input</th>
+                <th>Output</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="nonComparableSnapshotsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </section>
 </div>
 
@@ -235,7 +289,7 @@ const PRESETS={
   "7d":{ms:6048e5,min:18e5,max:216e5,pts:120}
 };
 const INTERVALS=[6e4,12e4,3e5,6e5,9e5,18e5,36e5,72e5,144e5,216e5];
-const state={audit:null,catalog:null,preset:"7d",windowMs:PRESETS["7d"].ms,mode:"preset",bucketMs:PRESETS["7d"].max,activeTab:"usage",selection:null,anchorMs:null,loadId:0};
+const state={audit:null,catalog:null,preset:"7d",windowMs:PRESETS["7d"].ms,mode:"preset",bucketMs:PRESETS["7d"].max,activeTab:"usage",usageAuditTab:"usage",selection:null,anchorMs:null,loadId:0};
 const charts={};
 const $=id=>document.getElementById(id);
 
@@ -605,6 +659,15 @@ function setUsageActionItems(status,title,items){
   el.classList.add(status||"info");
 }
 
+function setUsageAuditTab(tab){
+  state.usageAuditTab=tab==="audit"?"audit":"usage";
+  const usageActive=state.usageAuditTab==="usage";
+  $("usageAuditTabOverview").classList.toggle("active",usageActive);
+  $("usageAuditTabSnapshots").classList.toggle("active",!usageActive);
+  $("usageAuditPaneOverview").classList.toggle("active",usageActive);
+  $("usageAuditPaneSnapshots").classList.toggle("active",!usageActive);
+}
+
 function renderUsage(sel){
   const usageWarn=$("usageUnavailable");
   const usageAvailable=(
@@ -620,6 +683,11 @@ function renderUsage(sel){
     $("uKpiTopThread").textContent="—";
     $("uKpiTopQuery").textContent="—";
     $("uKpiAuditStatus").textContent="UNAVAILABLE";
+    $("uKpiRowsWithBoth").textContent="0";
+    $("uKpiRowMismatches").textContent="0";
+    $("uKpiNonComparable").textContent="0";
+    $("uKpiCachedOverInput").textContent="0";
+    $("uKpiReasoningOverOutput").textContent="0";
     setUsageAuditBanner("info","Audit checks unavailable because usage telemetry is missing in the loaded CSV datasets.");
     setUsageActionItems("info","Action items",[
       "Run a manual refresh so the dashboard regenerates typed usage CSV datasets with the current schema.",
@@ -636,6 +704,9 @@ function renderUsage(sel){
     drawBars("toolOverheadCanvas",[],"Usage telemetry unavailable");
     tableRows("topWorkspacesBody",[],6);tableRows("topThreadsBody",[],6);tableRows("topQueriesBody",[],8);
     tableRows("spikeBody",[],6);tableRows("repeatsBody",[],7);tableRows("toolOverheadBody",[],7);tableRows("contextBloatBody",[],4);
+    $("usageSnapshotCount").textContent="0";
+    $("usageSnapshotSummary").textContent="Usage telemetry unavailable in this window.";
+    tableRows("nonComparableSnapshotsBody",[],8);
     return;
   }
 
@@ -654,6 +725,11 @@ function renderUsage(sel){
     $("uKpiTopThread").textContent="—";
     $("uKpiTopQuery").textContent="—";
     $("uKpiAuditStatus").textContent="NO DATA";
+    $("uKpiRowsWithBoth").textContent="0";
+    $("uKpiRowMismatches").textContent="0";
+    $("uKpiNonComparable").textContent="0";
+    $("uKpiCachedOverInput").textContent="0";
+    $("uKpiReasoningOverOutput").textContent="0";
     setUsageAuditBanner("info","No token events in the active window, so reconciliation checks cannot run.");
     setUsageActionItems("info","Action items",[
       "Widen the time window or refresh after new usage events are generated.",
@@ -670,6 +746,9 @@ function renderUsage(sel){
     drawBars("toolOverheadCanvas",[],"No tool windows in window");
     tableRows("topWorkspacesBody",[],6);tableRows("topThreadsBody",[],6);tableRows("topQueriesBody",[],8);
     tableRows("spikeBody",[],6);tableRows("repeatsBody",[],7);tableRows("toolOverheadBody",[],7);tableRows("contextBloatBody",[],4);
+    $("usageSnapshotCount").textContent="0";
+    $("usageSnapshotSummary").textContent="No token events in the active window.";
+    tableRows("nonComparableSnapshotsBody",[],8);
     return;
   }
 
@@ -687,10 +766,11 @@ function renderUsage(sel){
       acc.sumRecomputed+=r.totalTokensRecomputed;
       if((r.totalTokensDelta||0)!==0||r.reconciliationStatus==="mismatch")acc.mismatchRows+=1;
     }
+    if(r.reconciliationStatus==="non_comparable_snapshot")acc.nonComparableRows+=1;
     if((r.cachedInputTokens||0)>(r.inputTokens||0))acc.cachedOverInputRows+=1;
     if((r.reasoningOutputTokens||0)>(r.outputTokens||0))acc.reasoningOverOutputRows+=1;
     return acc;
-  },{rowsWithBoth:0,sumRaw:0,sumRecomputed:0,mismatchRows:0,cachedOverInputRows:0,reasoningOverOutputRows:0});
+  },{rowsWithBoth:0,sumRaw:0,sumRecomputed:0,mismatchRows:0,nonComparableRows:0,cachedOverInputRows:0,reasoningOverOutputRows:0});
   const reconDeltaRawMinusRecomputed=recon.sumRaw-recon.sumRecomputed;
   const reconPass=recon.rowsWithBoth===0?false:(reconDeltaRawMinusRecomputed===0&&recon.mismatchRows===0&&recon.cachedOverInputRows===0&&recon.reasoningOverOutputRows===0);
 
@@ -700,6 +780,15 @@ function renderUsage(sel){
 
   const queryInfo=new Map();
   queryRows.forEach(r=>{if(!queryInfo.has(r.queryId))queryInfo.set(r.queryId,{ts:r.ts,text:r.queryText,cwd:workspaceName(r.cwd),threadId:r.threadId})});
+  const snapshotRows=tokenRows
+    .filter(r=>r.reconciliationStatus==="non_comparable_snapshot")
+    .sort((a,b)=>b.ts-a.ts);
+  const snapshotRawTotal=snapshotRows.reduce((a,r)=>a+(r.totalTokensRaw||0),0);
+  $("usageSnapshotCount").textContent=fmtNum(snapshotRows.length);
+  $("usageSnapshotSummary").textContent=snapshotRows.length
+    ? `${fmtNum(snapshotRows.length)} rows flagged non-comparable in this window · raw total=${fmtNum(snapshotRawTotal)}.`
+    : "No non-comparable rows in this window.";
+  tableRows("nonComparableSnapshotsBody",snapshotRows.map(r=>`<tr><td>${esc(fmtLocal(r.ts))}</td><td class="workspace" title="${esc(workspaceName(r.cwd))}">${esc(workspaceName(r.cwd))}</td><td class="path" title="${esc(r.threadId)}">${esc(threadName(r.threadId))}</td><td class="path" title="${esc(r.queryId)}">${esc(r.queryId||"unknown")}</td><td>${fmtNum(r.totalTokensRaw||0)}</td><td>${fmtNum(r.inputTokens||0)}</td><td>${fmtNum(r.outputTokens||0)}</td><td>${esc(r.reconciliationStatus||"unknown")}</td></tr>`),8);
 
   const queryTotalMap=new Map();
   tokenRows.forEach(r=>{
@@ -722,6 +811,11 @@ function renderUsage(sel){
   $("uKpiTopThread").textContent=topThread?`${threadName(topThread[0])} (${fmtNum(topThread[1].total)})`:"—";
   $("uKpiAuditStatus").textContent=recon.rowsWithBoth===0?"INFO":(reconPass?"PASS":"FAIL");
   $("uKpiReconDelta").textContent=fmtNum(reconDeltaRawMinusRecomputed);
+  $("uKpiRowsWithBoth").textContent=fmtNum(recon.rowsWithBoth);
+  $("uKpiRowMismatches").textContent=fmtNum(recon.mismatchRows);
+  $("uKpiNonComparable").textContent=fmtNum(recon.nonComparableRows);
+  $("uKpiCachedOverInput").textContent=fmtNum(recon.cachedOverInputRows);
+  $("uKpiReasoningOverOutput").textContent=fmtNum(recon.reasoningOverOutputRows);
   const topQueryEntry=[...queryTotalMap.entries()].sort((a,b)=>b[1]-a[1])[0];
   if(topQueryEntry){
     const info=queryInfo.get(topQueryEntry[0]);
@@ -742,7 +836,7 @@ function renderUsage(sel){
   }else{
     const version=(state.audit&&state.audit.metrics_version)?state.audit.metrics_version:"unknown";
     const statusText=reconPass?"PASS":"FAIL";
-    const detail=`Audit ${statusText} (metrics ${version}) · rows=${fmtNum(recon.rowsWithBoth)} · delta=${fmtNum(reconDeltaRawMinusRecomputed)} · row mismatches=${fmtNum(recon.mismatchRows)} · cached>input=${fmtNum(recon.cachedOverInputRows)} · reasoning>output=${fmtNum(recon.reasoningOverOutputRows)}`;
+    const detail=`Audit ${statusText} (metrics ${version}) · rows=${fmtNum(recon.rowsWithBoth)} · delta=${fmtNum(reconDeltaRawMinusRecomputed)} · row mismatches=${fmtNum(recon.mismatchRows)} · non-comparable=${fmtNum(recon.nonComparableRows)} · cached>input=${fmtNum(recon.cachedOverInputRows)} · reasoning>output=${fmtNum(recon.reasoningOverOutputRows)}`;
     setUsageAuditBanner(reconPass?"pass":"fail",detail);
     if(reconPass){
       setUsageActionItems("pass","Action items",[]);
@@ -1014,6 +1108,8 @@ function bind(){
   $("refreshBtn").addEventListener("click",refresh);
   $("tabRouting").addEventListener("click",()=>setActiveTab("routing"));
   $("tabUsage").addEventListener("click",()=>setActiveTab("usage"));
+  $("usageAuditTabOverview").addEventListener("click",()=>setUsageAuditTab("usage"));
+  $("usageAuditTabSnapshots").addEventListener("click",()=>setUsageAuditTab("audit"));
   let rt;window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(renderActiveTab,150)});
 }
 
@@ -1028,6 +1124,7 @@ function entrance(){
 function init(){
   const lr=$("lastRefresh");
   if(!lr.textContent||lr.textContent.includes("__LAST_REFRESH"))lr.textContent="awaiting sync";
+  setUsageAuditTab(state.usageAuditTab);
   bind();markPreset();entrance();loadWindowData(true,true);
 }
 init();

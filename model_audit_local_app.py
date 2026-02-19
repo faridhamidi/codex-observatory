@@ -494,20 +494,36 @@ def extract_event_rows(sessions_dir: Path) -> list[AuditEventRow]:
                             reasoning_output_tokens = coerce_int(last_usage.get("reasoning_output_tokens"))
                             total_tokens_raw = coerce_int(last_usage.get("total_tokens"))
 
+                            # Some compacted/session-summary frames emit a non-zero raw total while all
+                            # last-usage components are zero. Those rows are not comparable for raw-vs-recomputed
+                            # reconciliation and should not fail A1.
+                            is_non_comparable_snapshot = (
+                                isinstance(total_tokens_raw, int)
+                                and total_tokens_raw > 0
+                                and (input_tokens or 0) == 0
+                                and (output_tokens or 0) == 0
+                                and (cached_input_tokens or 0) == 0
+                                and (reasoning_output_tokens or 0) == 0
+                            )
+
                             total_tokens_recomputed: int | None = None
-                            if input_tokens is not None or output_tokens is not None:
+                            if not is_non_comparable_snapshot and (input_tokens is not None or output_tokens is not None):
                                 total_tokens_recomputed = (input_tokens or 0) + (output_tokens or 0)
 
                             total_tokens_delta: int | None = None
                             if total_tokens_raw is not None and total_tokens_recomputed is not None:
                                 total_tokens_delta = total_tokens_raw - total_tokens_recomputed
 
-                            if total_tokens_recomputed is not None:
+                            if is_non_comparable_snapshot:
+                                total_tokens = 0
+                            elif total_tokens_recomputed is not None:
                                 total_tokens = total_tokens_recomputed
                             else:
                                 total_tokens = total_tokens_raw
 
-                            if total_tokens_delta is None:
+                            if is_non_comparable_snapshot:
+                                reconciliation_status = "non_comparable_snapshot"
+                            elif total_tokens_delta is None:
                                 reconciliation_status = "insufficient_data"
                             elif total_tokens_delta == 0:
                                 reconciliation_status = "match"

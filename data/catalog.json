@@ -1,11 +1,11 @@
 {
   "status": "ok",
-  "generated_at_utc": "2026-02-19T01:41:26.771461Z",
-  "latest_event_utc": "2026-02-19T01:41:12.307000Z",
-  "latest_event_epoch_ms": 1771465272307,
+  "generated_at_utc": "2026-02-19T02:09:21.518489Z",
+  "latest_event_utc": "2026-02-19T02:05:54.178000Z",
+  "latest_event_epoch_ms": 1771466754178,
   "source_sessions_dir": "/Users/faridnordin/.codex/sessions",
   "max_retention_days": 31,
-  "retention_cutoff_utc": "2026-01-19T01:41:12.307000Z",
+  "retention_cutoff_utc": "2026-01-19T02:05:54.178000Z",
   "datasets": [
     {
       "key": "routing_context",
@@ -27,10 +27,10 @@
         "approval_policy",
         "session_file"
       ],
-      "row_count": 5956,
+      "row_count": 6004,
       "csv_path": "/Users/faridnordin/Documents/Self Development/model_audit_mini_app/data/routing_context.csv",
       "relative_path": "/data/routing_context.csv",
-      "csv_bytes": 2293383
+      "csv_bytes": 2311636
     },
     {
       "key": "query_messages",
@@ -55,10 +55,10 @@
         "message_text",
         "query_text"
       ],
-      "row_count": 1789,
+      "row_count": 1803,
       "csv_path": "/Users/faridnordin/Documents/Self Development/model_audit_mini_app/data/query_messages.csv",
       "relative_path": "/data/query_messages.csv",
-      "csv_bytes": 1690173
+      "csv_bytes": 1700297
     },
     {
       "key": "usage_tokens",
@@ -89,10 +89,10 @@
         "reconciliation_status",
         "total_tokens"
       ],
-      "row_count": 11786,
+      "row_count": 11881,
       "csv_path": "/Users/faridnordin/Documents/Self Development/model_audit_mini_app/data/usage_tokens.csv",
       "relative_path": "/data/usage_tokens.csv",
-      "csv_bytes": 5084151
+      "csv_bytes": 5124907
     },
     {
       "key": "tool_calls",
@@ -119,10 +119,10 @@
         "tool_end_epoch_ms",
         "tool_duration_ms"
       ],
-      "row_count": 5392,
+      "row_count": 5454,
       "csv_path": "/Users/faridnordin/Documents/Self Development/model_audit_mini_app/data/tool_calls.csv",
       "relative_path": "/data/tool_calls.csv",
-      "csv_bytes": 2453222
+      "csv_bytes": 2481260
     }
   ]
 }

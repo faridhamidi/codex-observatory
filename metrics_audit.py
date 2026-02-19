@@ -54,10 +54,13 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
     reasoning_total = 0
     total_raw_sum = 0
     total_recomputed_sum = 0
+    recon_raw_sum = 0
+    recon_recomputed_sum = 0
     total_reported_sum = 0
     rows_with_raw_total = 0
     rows_with_recomputed_total = 0
     rows_with_both_totals = 0
+    non_comparable_snapshot_rows = 0
     negative_rows = 0
     cached_over_input_rows = 0
     reasoning_over_output_rows = 0
@@ -74,6 +77,7 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
         total_tokens_recomputed = _field(row, "total_tokens_recomputed")
         total_tokens = _field(row, "total_tokens")
         total_tokens_delta = _field(row, "total_tokens_delta")
+        reconciliation_status = str(_field(row, "reconciliation_status") or "")
         query_id = str(_field(row, "query_id") or "")
 
         if isinstance(input_tokens, int):
@@ -94,6 +98,10 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
             total_reported_sum += total_tokens
         if isinstance(total_tokens_raw, int) and isinstance(total_tokens_recomputed, int):
             rows_with_both_totals += 1
+            recon_raw_sum += total_tokens_raw
+            recon_recomputed_sum += total_tokens_recomputed
+        if reconciliation_status == "non_comparable_snapshot":
+            non_comparable_snapshot_rows += 1
         if total_tokens_delta not in (None, 0):
             row_mismatch_count += 1
             if len(mismatch_examples) < 10:
@@ -131,7 +139,8 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
         ):
             reasoning_over_output_rows += 1
 
-    total_delta = total_raw_sum - total_recomputed_sum
+    total_delta_recon_only = recon_raw_sum - recon_recomputed_sum
+    total_delta_all_rows = total_raw_sum - total_recomputed_sum
     query_count = len(query_ids)
     avg_tokens_per_query = total_reported_sum / query_count if query_count else 0.0
     cache_hit_rate = cached_total / input_total if input_total else 0.0
@@ -140,10 +149,12 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
     checks = [
         CheckResult(
             check_id="A1_total_tokens_reconcile",
-            passed=(rows_with_both_totals == 0 or total_delta == 0),
+            passed=(rows_with_both_totals == 0 or total_delta_recon_only == 0),
             details=(
                 f"rows_with_both={rows_with_both_totals}, "
-                f"sum_raw={total_raw_sum}, sum_recomputed={total_recomputed_sum}, delta={total_delta}"
+                f"sum_raw={recon_raw_sum}, sum_recomputed={recon_recomputed_sum}, "
+                f"delta={total_delta_recon_only}, non_comparable_snapshot_rows={non_comparable_snapshot_rows}, "
+                f"delta_all_rows={total_delta_all_rows}"
             ),
         ),
         CheckResult(
@@ -243,6 +254,7 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
             "rows_with_raw_total": rows_with_raw_total,
             "rows_with_recomputed_total": rows_with_recomputed_total,
             "rows_with_both_totals": rows_with_both_totals,
+            "non_comparable_snapshot_rows": non_comparable_snapshot_rows,
             "row_mismatch_count": row_mismatch_count,
             "input_tokens": input_total,
             "output_tokens": output_total,
@@ -251,7 +263,8 @@ def build_usage_audit_report(rows: list[Any], generated_at_utc: str) -> dict[str
             "total_tokens_reported": total_reported_sum,
             "total_tokens_raw_sum": total_raw_sum,
             "total_tokens_recomputed_sum": total_recomputed_sum,
-            "total_tokens_delta_raw_minus_recomputed": total_delta,
+            "total_tokens_delta_raw_minus_recomputed": total_delta_recon_only,
+            "total_tokens_delta_all_rows_raw_minus_recomputed": total_delta_all_rows,
             "cache_hit_rate": cache_hit_rate,
             "output_input_ratio": output_input_ratio,
             "distinct_query_count": query_count,
