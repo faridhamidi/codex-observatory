@@ -246,7 +246,7 @@ def test_write_csv_atomic_outputs_strict_schema(tmp_path: Path) -> None:
     rows = extract_event_rows(sessions)
     assert rows
 
-    csv_path = tmp_path / "model_audit_data.csv"
+    csv_path = tmp_path / "usage_tokens.csv"
     write_csv_atomic(csv_path, rows)
 
     with csv_path.open("r", encoding="utf-8", newline="") as handle:

@@ -1,6 +1,6 @@
 {
   "status": "pass",
-  "generated_at_utc": "2026-02-19T02:09:21.518489Z",
+  "generated_at_utc": "2026-02-19T04:44:02.891023Z",
   "timezone": "UTC",
   "metrics_version": "v1.0",
   "total_tokens_policy": "input_tokens + output_tokens",
@@ -8,32 +8,32 @@
     "reasoning_output_tokens_semantics": "May overlap with output_tokens depending on upstream telemetry definition."
   },
   "summary": {
-    "token_row_count": 11881,
-    "rows_with_raw_total": 11881,
-    "rows_with_recomputed_total": 11855,
-    "rows_with_both_totals": 11855,
+    "token_row_count": 11941,
+    "rows_with_raw_total": 11941,
+    "rows_with_recomputed_total": 11915,
+    "rows_with_both_totals": 11915,
     "non_comparable_snapshot_rows": 26,
     "row_mismatch_count": 0,
-    "input_tokens": 1170240247,
-    "output_tokens": 6175687,
-    "cached_input_tokens": 1115840384,
-    "reasoning_output_tokens": 2925465,
-    "total_tokens_reported": 1176415934,
-    "total_tokens_raw_sum": 1180976792,
-    "total_tokens_recomputed_sum": 1176415934,
+    "input_tokens": 1179682627,
+    "output_tokens": 6194200,
+    "cached_input_tokens": 1125207424,
+    "reasoning_output_tokens": 2932247,
+    "total_tokens_reported": 1185876827,
+    "total_tokens_raw_sum": 1190437685,
+    "total_tokens_recomputed_sum": 1185876827,
     "total_tokens_delta_raw_minus_recomputed": 0,
     "total_tokens_delta_all_rows_raw_minus_recomputed": 4560858,
-    "cache_hit_rate": 0.953513936014884,
-    "output_input_ratio": 0.0052772813239263,
-    "distinct_query_count": 810,
-    "avg_tokens_per_query": 1452365.350617284,
+    "cache_hit_rate": 0.9538221537274534,
+    "output_input_ratio": 0.005250734272278132,
+    "distinct_query_count": 814,
+    "avg_tokens_per_query": 1456851.1388206389,
     "mismatch_examples": []
   },
   "checks": [
     {
       "check_id": "A1_total_tokens_reconcile",
       "status": "pass",
-      "details": "rows_with_both=11855, sum_raw=1176415934, sum_recomputed=1176415934, delta=0, non_comparable_snapshot_rows=26, delta_all_rows=4560858"
+      "details": "rows_with_both=11915, sum_raw=1185876827, sum_recomputed=1185876827, delta=0, non_comparable_snapshot_rows=26, delta_all_rows=4560858"
     },
     {
       "check_id": "A2_cached_lte_input",
@@ -53,7 +53,7 @@
     {
       "check_id": "A5_avg_tokens_per_query_definition",
       "status": "pass",
-      "details": "query_count=810, avg=1452365.350617, total=1176415934"
+      "details": "query_count=814, avg=1456851.138821, total=1185876827"
     }
   ],
   "failed_check_ids": [],

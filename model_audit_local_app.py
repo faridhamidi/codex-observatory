@@ -17,8 +17,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 try:
-    from model_audit_mini_app.metrics_audit import build_usage_audit_report
-except ModuleNotFoundError:  # pragma: no cover - support direct script execution
+    from .metrics_audit import build_usage_audit_report
+except ImportError:  # pragma: no cover - support direct script execution
     from metrics_audit import build_usage_audit_report
 
 
@@ -56,12 +56,10 @@ CSV_HEADERS = [
 ]
 
 HTML_NAME = "model_audit_dashboard.html"
-CSV_NAME = "model_audit_data.csv"
 AUDIT_JSON_NAME = "model_audit_audit.json"
 DATA_DIR_NAME = "data"
 DATA_CATALOG_NAME = "catalog.json"
 CODEX_GLOBAL_STATE_PATH = Path.home() / ".codex" / ".codex-global-state.json"
-DEFAULT_MAX_CSV_BYTES = 0
 DEFAULT_MAX_CSV_ROWS = 0
 DEFAULT_MAX_RETENTION_DAYS = 31
 MAX_QUERY_TEXT_CHARS = 600
@@ -743,15 +741,11 @@ def trim_rows_for_csv_budget(
     *,
     max_retention_days: int,
     max_rows: int,
-    max_csv_bytes: int,
 ) -> tuple[list[AuditEventRow], dict[str, Any]]:
     original_count = len(rows)
     trimmed_by_age_limit = 0
-    trimmed_by_detail_limit = 0
     trimmed_by_row_limit = 0
-    trimmed_by_size_limit = 0
     retention_cutoff_utc = ""
-    detail_cutoff_utc = ""
     latest_event_utc = ""
 
     effective_rows = rows
@@ -779,15 +773,10 @@ def trim_rows_for_csv_budget(
             "original_rows": original_count,
             "rows_after_limits": len(effective_rows),
             "trimmed_by_age_limit": trimmed_by_age_limit,
-            "trimmed_by_detail_limit": trimmed_by_detail_limit,
             "trimmed_by_row_limit": trimmed_by_row_limit,
-            "trimmed_by_size_limit": trimmed_by_size_limit,
             "max_retention_days": max_retention_days,
             "latest_event_utc": latest_event_utc,
             "retention_cutoff_utc": retention_cutoff_utc,
-            "detail_cutoff_utc": detail_cutoff_utc,
-            "bytes_budget": max_csv_bytes,
-            "estimated_csv_bytes": 0,
         },
     )
 
@@ -851,7 +840,6 @@ class AuditAppContext:
         *,
         max_retention_days: int = DEFAULT_MAX_RETENTION_DAYS,
         max_csv_rows: int = DEFAULT_MAX_CSV_ROWS,
-        max_csv_bytes: int = DEFAULT_MAX_CSV_BYTES,
     ) -> None:
         self.sessions_dir = sessions_dir
         self.reports_dir = reports_dir
@@ -861,7 +849,6 @@ class AuditAppContext:
         self.audit_json_path = reports_dir / AUDIT_JSON_NAME
         self.max_retention_days = max_retention_days
         self.max_csv_rows = max_csv_rows
-        self.max_csv_bytes = max_csv_bytes
         self.last_refresh_meta: dict[str, Any] | None = None
 
     def refresh_csv(self) -> dict[str, Any]:
@@ -872,7 +859,6 @@ class AuditAppContext:
             rows,
             max_retention_days=self.max_retention_days,
             max_rows=self.max_csv_rows,
-            max_csv_bytes=self.max_csv_bytes,
         )
         dataset_meta = write_dataset_csvs_atomic(self.data_dir, rows)
         total_data_bytes = sum(int(item.get("csv_bytes") or 0) for item in dataset_meta.values())
@@ -915,20 +901,13 @@ class AuditAppContext:
             "status": "ok",
             "rows_written": len(rows),
             "rows_source_total": trim_stats["original_rows"],
-            "rows_trimmed_total": trim_stats["trimmed_by_age_limit"]
-            + trim_stats["trimmed_by_detail_limit"]
-            + trim_stats["trimmed_by_row_limit"]
-            + trim_stats["trimmed_by_size_limit"],
+            "rows_trimmed_total": trim_stats["trimmed_by_age_limit"] + trim_stats["trimmed_by_row_limit"],
             "rows_trimmed_by_age_limit": trim_stats["trimmed_by_age_limit"],
-            "rows_trimmed_by_detail_limit": trim_stats["trimmed_by_detail_limit"],
             "rows_trimmed_by_row_limit": trim_stats["trimmed_by_row_limit"],
-            "rows_trimmed_by_size_limit": trim_stats["trimmed_by_size_limit"],
             "max_retention_days": self.max_retention_days,
             "retention_cutoff_utc": trim_stats["retention_cutoff_utc"],
-            "detail_cutoff_utc": trim_stats["detail_cutoff_utc"],
             "latest_event_utc": trim_stats["latest_event_utc"],
             "max_csv_rows": self.max_csv_rows,
-            "max_csv_bytes": self.max_csv_bytes,
             "estimated_csv_bytes": total_data_bytes,
             "generated_at_utc": generated_at_utc,
             "source_sessions_dir": str(self.sessions_dir),
@@ -951,7 +930,6 @@ class AuditAppContext:
         if self.last_refresh_meta:
             refresh_time = str(self.last_refresh_meta.get("generated_at_utc", ""))
         text = text.replace("__SOURCE_SESSIONS_DIR__", str(self.sessions_dir))
-        text = text.replace("__CSV_RELATIVE_PATH__", f"/{DATA_DIR_NAME}/usage_tokens.csv")
         text = text.replace("__DATA_BASE_PATH__", f"/{DATA_DIR_NAME}")
         text = text.replace("__AUDIT_JSON_RELATIVE_PATH__", "/audit.json")
         text = text.replace("__LAST_REFRESH_UTC__", refresh_time)
@@ -1182,15 +1160,6 @@ def parse_args() -> argparse.Namespace:
             f"Current default: {DEFAULT_MAX_CSV_ROWS}"
         ),
     )
-    parser.add_argument(
-        "--max-csv-bytes",
-        type=int,
-        default=DEFAULT_MAX_CSV_BYTES,
-        help=(
-            "Deprecated size cap (kept for compatibility); default is disabled to preserve full typed datasets. "
-            f"Current default: {DEFAULT_MAX_CSV_BYTES}"
-        ),
-    )
     return parser.parse_args()
 
 
@@ -1204,7 +1173,6 @@ def main() -> int:
         reports_dir=reports_dir,
         max_retention_days=max(0, args.max_retention_days),
         max_csv_rows=max(0, args.max_csv_rows),
-        max_csv_bytes=max(0, args.max_csv_bytes),
     )
     if not app_context.html_path.exists():
         raise SystemExit(f"Missing dashboard template: {app_context.html_path}")
