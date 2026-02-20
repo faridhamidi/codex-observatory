@@ -2,6 +2,18 @@
 
 Local dashboard for auditing Codex session usage: model routing, token usage, tool calls, and optimization opportunities.
 
+## Introduction
+
+The dashboard provides quick visibility into routing patterns, usage trends, and audit signals across your Codex sessions.
+
+### Model Routing
+
+![Model routing dashboard screenshot](screenshot/sc-modelrouting-1.png)
+
+### Usage Overview
+
+![Usage dashboard screenshot](screenshot/sc-usage-usage-1.png)
+
 ## Public Repo Notes
 
 This repo is configured to avoid committing runtime artifacts that can include sensitive local metadata (for example local filesystem paths, thread labels, and prompt text).
