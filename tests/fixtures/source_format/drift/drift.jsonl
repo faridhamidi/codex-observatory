@@ -1,0 +1,6 @@
+{"type":"event_message","timestamp":"2026-02-17T01:00:00Z","payload":{}}
+{"type":"event_msg","timestamp":"not-a-ts","payload":{"type":"user_message","message":"hello"}}
+{"type":"event_msg","timestamp":"2026-02-17T01:00:02Z","payload":{"type":"token_count","info":{"usage":{"input_tokens":1}}}}
+{"type":"response_item","timestamp":"2026-02-17T01:00:03Z","payload":{"type":"function_call","name":"shell"}}
+{"type":"response_item","timestamp":"2026-02-17T01:00:04Z","payload":{"type":"function_result","call_id":"call_1","output":{}}}
+{"type":"response_item","timestamp":"2026-02-17T01:00:05Z","payload":{"type":"function_call_output","call_id":"call_1"}}
